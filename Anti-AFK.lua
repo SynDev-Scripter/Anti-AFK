@@ -5,22 +5,26 @@ local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 
+-- // GUI Setup
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CounterGui"
+ScreenGui.Name = "AntiAFKGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = game:GetService("CoreGui")
 
-local margin = 20
+local MARGIN = 20
+local ON_SCREEN = UDim2.new(1, -MARGIN, 1, -MARGIN)
+local OFF_SCREEN = UDim2.new(1, 160, 1, -MARGIN)
 
-local function createStyledFrame(size, position, anchorPoint)
+local function createFrame(size, position, anchor)
 	local frame = Instance.new("Frame")
 	frame.Size = size
 	frame.Position = position
-	frame.AnchorPoint = anchorPoint
+	frame.AnchorPoint = anchor
 	frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	frame.BackgroundTransparency = 0.3
 	frame.BorderSizePixel = 0
+	frame.ZIndex = 2
 
 	local gradient = Instance.new("UIGradient")
 	gradient.Color = ColorSequence.new({
@@ -47,106 +51,98 @@ local function createStyledFrame(size, position, anchorPoint)
 	return frame
 end
 
-local onScreenPos = UDim2.new(1, -margin, 1, -margin)
-local offScreenPos = UDim2.new(1, 160, 1, -margin)
-
-local Counter = createStyledFrame(
-	UDim2.new(0, 140, 0, 52),
-	offScreenPos,
-	Vector2.new(1, 1)
-)
-
+local Counter = createFrame(UDim2.new(0, 140, 0, 52), OFF_SCREEN, Vector2.new(1, 1))
 Counter.Name = "Counter"
 Counter.Parent = ScreenGui
 Counter.Visible = true
-Counter.ZIndex = 2
 
-local TextLabel = Instance.new("TextLabel")
-TextLabel.Parent = Counter
-TextLabel.Size = UDim2.new(0, 63, 0, 23)
-TextLabel.Position = UDim2.new(0.065, 0, 0.26, 0)
-TextLabel.BackgroundTransparency = 1
-TextLabel.Text = "00:00:00"
-TextLabel.Font = Enum.Font.FredokaOne
-TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextLabel.TextScaled = true
-TextLabel.TextWrapped = true
-TextLabel.BorderSizePixel = 0
-TextLabel.ZIndex = 3
+local TimeLabel = Instance.new("TextLabel")
+TimeLabel.Name = "TimeLabel"
+TimeLabel.Parent = Counter
+TimeLabel.Size = UDim2.new(0, 63, 0, 23)
+TimeLabel.Position = UDim2.new(0.065, 0, 0.26, 0)
+TimeLabel.BackgroundTransparency = 1
+TimeLabel.Text = "00:00:00"
+TimeLabel.Font = Enum.Font.FredokaOne
+TimeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TimeLabel.TextScaled = true
+TimeLabel.TextWrapped = true
+TimeLabel.BorderSizePixel = 0
+TimeLabel.ZIndex = 3
 
-local ImageLabel = Instance.new("ImageLabel")
-ImageLabel.Parent = Counter
-ImageLabel.Position = UDim2.new(0.59, 1, 0.10, 3)
-ImageLabel.Size = UDim2.new(0, 40, 0, 33)
-ImageLabel.BackgroundTransparency = 1
-ImageLabel.Image = "rbxassetid://1083501283"
-ImageLabel.BorderSizePixel = 0
-ImageLabel.ZIndex = 3
+local Icon = Instance.new("ImageLabel")
+Icon.Name = "Icon"
+Icon.Parent = Counter
+Icon.Position = UDim2.new(0.59, 1, 0.10, 3)
+Icon.Size = UDim2.new(0, 40, 0, 33)
+Icon.BackgroundTransparency = 1
+Icon.Image = "rbxassetid://1083501283"
+Icon.BorderSizePixel = 0
+Icon.ZIndex = 3
 
-local UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
-UIAspectRatioConstraint.Parent = Counter
-UIAspectRatioConstraint.AspectRatio = 2.635
+local Aspect = Instance.new("UIAspectRatioConstraint")
+Aspect.AspectRatio = 2.635
+Aspect.Parent = Counter
 
+-- // Timer
 task.spawn(function()
 	local seconds = 0
-
 	while ScreenGui.Parent do
 		task.wait(1)
-
 		seconds += 1
 
 		local hours = math.floor(seconds / 3600)
 		local minutes = math.floor((seconds % 3600) / 60)
 		local secs = seconds % 60
 
-		TextLabel.Text = string.format(
-			"%02d:%02d:%02d",
-			hours,
-			minutes,
-			secs
-		)
+		TimeLabel.Text = string.format("%02d:%02d:%02d", hours, minutes, secs)
 	end
 end)
 
-local function antiAfk()
+-- // Anti-AFK (more reliable)
+local function doAntiAFK()
 	pcall(function()
 		VirtualUser:CaptureController()
-
-		local camera = workspace.CurrentCamera
-
-		if camera then
-			VirtualUser:Button2Down(
-				Vector2.new(0, 0),
-				camera.CFrame
-			)
-
-			task.wait(0.1)
-
-			VirtualUser:Button2Up(
-				Vector2.new(0, 0),
-				camera.CFrame
-			)
-		else
-			VirtualUser:ClickButton2(Vector2.new(0, 0))
-		end
+		VirtualUser:ClickButton2(Vector2.new())
 	end)
 end
 
-LocalPlayer.Idled:Connect(function()
-	antiAfk()
+-- Best method: disable the Idled connections completely (if executor supports it)
+local usedBestMethod = false
+pcall(function()
+	if getconnections then
+		for _, connection in pairs(getconnections(LocalPlayer.Idled)) do
+			if connection.Disable then
+				connection:Disable()
+				usedBestMethod = true
+			elseif connection.Disconnect then
+				connection:Disconnect()
+				usedBestMethod = true
+			end
+		end
+	end
 end)
 
-local slideTweenInfo = TweenInfo.new(
-	0.5,
-	Enum.EasingStyle.Quint,
-	Enum.EasingDirection.Out
-)
+-- Fallback: classic VirtualUser method (always works)
+if not usedBestMethod then
+	LocalPlayer.Idled:Connect(doAntiAFK)
+end
 
-local isCounterVisible = true
+-- Extra safety: periodic click every 15 minutes (just in case)
+task.spawn(function()
+	while ScreenGui.Parent do
+		task.wait(900) -- 15 minutes
+		doAntiAFK()
+	end
+end)
+
+-- // Toggle Animation
+local slideInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local isVisible = true
 local currentTween
 
 local function toggleCounter(visible)
-	isCounterVisible = visible
+	isVisible = visible
 
 	if currentTween then
 		currentTween:Cancel()
@@ -154,29 +150,13 @@ local function toggleCounter(visible)
 
 	if visible then
 		Counter.Visible = true
-
-		currentTween = TweenService:Create(
-			Counter,
-			slideTweenInfo,
-			{
-				Position = onScreenPos
-			}
-		)
-
+		currentTween = TweenService:Create(Counter, slideInfo, { Position = ON_SCREEN })
 		currentTween:Play()
 	else
-		currentTween = TweenService:Create(
-			Counter,
-			slideTweenInfo,
-			{
-				Position = offScreenPos
-			}
-		)
-
+		currentTween = TweenService:Create(Counter, slideInfo, { Position = OFF_SCREEN })
 		currentTween:Play()
-
 		currentTween.Completed:Once(function()
-			if not isCounterVisible then
+			if not isVisible then
 				Counter.Visible = false
 			end
 		end)
@@ -186,11 +166,9 @@ end
 toggleCounter(true)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then
-		return
-	end
+	if gameProcessed then return end
 
 	if input.KeyCode == Enum.KeyCode.RightControl then
-		toggleCounter(not isCounterVisible)
+		toggleCounter(not isVisible)
 	end
 end)
